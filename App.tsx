@@ -25,6 +25,9 @@ export type RootStackParamList = {
   SearchResults: {
     eircode: string;
     userLocation: { latitude: number; longitude: number };
+    destination: { latitude: number; longitude: number };
+    destinationName: string;
+    distance?: number;
   };
   LiveMap: {
     busData: any[];

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,21 @@ import {
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../App';
+import { locationService } from '../services/LocationService';
 import WeatherService from '../services/WeatherService';
-import TransportService from '../services/TransportService';
-import { WeatherData, TransportData, LocationData } from '../types/api';
+import { eircodeService } from '../services/EirCodeService';
+import { transportService } from '../services/TransportService';
+import { busStopService, BusStop } from '../services/BusStopService';
+import { WeatherData, LocationData } from '../types/api';
+
+interface TransportData {
+  id: string;
+  route: string;
+  destination: string;
+  delay: number;
+  eta: string;
+  stops: number;
+}
 
 const COLORS = {
   primary: '#00A65A',
@@ -28,18 +40,8 @@ const COLORS = {
 };
 
 const STYLES = {
-  spacing: {
-    xs: 4,
-    sm: 8,
-    md: 16,
-    lg: 24,
-    xl: 32,
-  },
-  borderRadius: {
-    sm: 4,
-    md: 8,
-    lg: 12,
-  },
+  spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
+  borderRadius: { sm: 4, md: 8, lg: 12 },
 };
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
@@ -49,88 +51,224 @@ interface Props {
 }
 
 const HomeScreen: React.FC<Props> = ({ navigation }) => {
-  const [eircode, setEircode] = useState<string>('');
+  const [eircode, setEircode] = useState('');
   const [userLocation, setUserLocation] = useState<LocationData | null>(null);
+  const [locationName, setLocationName] = useState('');
   const [currentWeather, setCurrentWeather] = useState<WeatherData | null>(
     null,
   );
   const [nearbyBuses, setNearbyBuses] = useState<TransportData[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [nearbyBusStops, setNearbyBusStops] = useState<BusStop[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [locationError, setLocationError] = useState('');
+  const [apiStatus, setApiStatus] = useState('');
+
+  const weatherServiceRef = useRef(new WeatherService());
 
   useEffect(() => {
-    setUserLocation({ latitude: 53.3498, longitude: -6.2603 }); // Dublin coordinates
-    fetchCurrentWeather(53.3498, -6.2603);
-    fetchNearbyBuses();
+    initializeApp();
+    setApiStatus(transportService.getApiStatus().message);
   }, []);
 
-  const fetchCurrentWeather = async (lat: number, lon: number) => {
+  const initializeApp = async () => {
+    setLocationLoading(true);
     try {
-      const weather = await WeatherService.getCurrentWeather(lat, lon);
-      setCurrentWeather(weather);
-    } catch (error) {
-      console.error('Error fetching weather:', error);
+      await getCurrentLocation();
+    } finally {
+      setLocationLoading(false);
     }
   };
 
-  const fetchNearbyBuses = async () => {
+  const getCurrentLocation = async () => {
     try {
-      // For now, use mock data
-      const buses = TransportService.getMockBusData();
-      setNearbyBuses(buses);
+      const hasPermission = await locationService.requestLocationPermission();
+      const location: LocationData = hasPermission
+        ? await locationService.getCurrentLocation()
+        : locationService.getDefaultLocation();
+
+      setUserLocation(location);
+      await fetchLocationName(location);
+      await fetchCurrentWeather(location);
+      await fetchNearbyTransport(location);
     } catch (error) {
-      console.error('Error fetching buses:', error);
+      console.error('Error getting location:', error);
+      setLocationError(
+        'Failed to get location. Using default location (Dublin).',
+      );
+      const defaultLocation = locationService.getDefaultLocation();
+      setUserLocation(defaultLocation);
+      await fetchLocationName(defaultLocation);
+      await fetchCurrentWeather(defaultLocation);
+      await fetchNearbyTransport(defaultLocation);
+    }
+  };
+
+  const fetchLocationName = async (location: LocationData) => {
+    try {
+      const name = await weatherServiceRef.current.getLocationName(
+        location.latitude,
+        location.longitude,
+      );
+      setLocationName(name);
+    } catch (error) {
+      console.error('Error fetching location name:', error);
+      setLocationName(
+        weatherServiceRef.current.getDublinAreaName(
+          location.latitude,
+          location.longitude,
+        ),
+      );
+    }
+  };
+
+  const fetchCurrentWeather = async (location: LocationData) => {
+    try {
+      const weather = await weatherServiceRef.current.getCurrentWeather(
+        location.latitude,
+        location.longitude,
+      );
+      setCurrentWeather(weather);
+    } catch (error) {
+      console.error('Error fetching weather:', error);
+      setCurrentWeather(
+        weatherServiceRef.current.getMockWeatherData(
+          location.latitude,
+          location.longitude,
+        ),
+      );
+    }
+  };
+
+  const fetchNearbyTransport = async (location: LocationData) => {
+    try {
+      const buses = await transportService.getBusesNearLocation(
+        location.latitude,
+        location.longitude,
+        5, // 5 km radius
+      );
+
+      const formattedBuses = buses.map(bus => ({
+        id: bus.id,
+        route: bus.route,
+        destination: bus.destination,
+        delay: bus.delay,
+        eta: 'N/A',
+        stops: 0,
+      }));
+
+      setNearbyBuses(formattedBuses);
+
+      // Fetch nearby bus stops (Haversine)
+      const stops = await busStopService.loadBusStopsData();
+      const nearbyStops = stops.filter(stop => {
+        const R = 6371;
+        const dLat = ((stop.stop_lat - location.latitude) * Math.PI) / 180;
+        const dLon = ((stop.stop_lon - location.longitude) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos((location.latitude * Math.PI) / 180) *
+            Math.cos((stop.stop_lat * Math.PI) / 180) *
+            Math.sin(dLon / 2) ** 2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distance = R * c;
+        return distance <= 3;
+      });
+      setNearbyBusStops(nearbyStops);
+    } catch (error) {
+      console.error('Error fetching transport data:', error);
     }
   };
 
   const handleSearch = async () => {
     if (!eircode.trim()) {
-      Alert.alert('Error', 'Please enter an Eircode');
+      Alert.alert('Error', 'Please enter an Eircode or address');
       return;
     }
-
     setLoading(true);
     try {
-      // Navigate to SearchResults screen with the eircode
+      let destinationCoords: { latitude: number; longitude: number };
+      let destinationName: string;
+
+      if (eircodeService.isValidEircode(eircode)) {
+        const eircodeResult = await eircodeService.lookupEircode(eircode);
+        if (!eircodeResult) throw new Error('Eircode not found');
+        destinationCoords = {
+          latitude: eircodeResult.latitude,
+          longitude: eircodeResult.longitude,
+        };
+        destinationName = eircodeResult.address;
+      } else {
+        const addressResult = await eircodeService.searchAddress(eircode);
+        if (!addressResult) throw new Error('Address not found');
+        destinationCoords = {
+          latitude: addressResult.latitude,
+          longitude: addressResult.longitude,
+        };
+        destinationName = addressResult.address;
+      }
+
+      const userCoords = userLocation || locationService.getDefaultLocation();
+      const distance = eircodeService.calculateDistance(
+        userCoords.latitude,
+        userCoords.longitude,
+        destinationCoords.latitude,
+        destinationCoords.longitude,
+      );
+
       navigation.navigate('SearchResults', {
-        eircode,
-        userLocation: userLocation || { latitude: 53.3498, longitude: -6.2603 },
+        eircode: eircodeService.formatEircode(eircode),
+        userLocation: userCoords,
+        destination: destinationCoords,
+        destinationName,
+        distance,
       });
-    } catch (error) {
-      Alert.alert('Error', 'Failed to search. Please try again.');
+    } catch (error: any) {
+      Alert.alert('Search Error', error.message || 'Failed to search.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePlanJourney = () => {
-    navigation.navigate('JourneyPlanner');
+  const handleRefreshLocation = async () => {
+    setLocationLoading(true);
+    setLocationError('');
+    setLocationName('');
+    await getCurrentLocation();
+    setLocationLoading(false);
   };
 
+  const handlePlanJourney = () => navigation.navigate('JourneyPlanner');
+
   const handleLiveMap = () => {
+    if (!userLocation) return;
+    const sampleDestination = { latitude: 53.3494, longitude: -6.2602 };
     navigation.navigate('LiveMap', {
       busData: nearbyBuses,
-      destination: { latitude: 53.3498, longitude: -6.2603 },
+      destination: sampleDestination,
     });
   };
 
   const getTrafficLevel = (delay: number) => {
-    if (delay < 300) {
+    if (delay < 300)
       return { level: 'light', color: COLORS.success, label: 'Light traffic' };
-    } else if (delay < 900) {
+    if (delay < 900)
       return {
         level: 'moderate',
         color: COLORS.warning,
         label: 'Moderate traffic',
       };
-    } else {
-      return { level: 'heavy', color: COLORS.danger, label: 'Heavy traffic' };
-    }
+    return { level: 'heavy', color: COLORS.danger, label: 'Heavy traffic' };
   };
 
-  const formatDelay = (delay: number): string => {
-    const minutes = Math.floor(delay / 60);
-    return minutes > 0 ? `${minutes} min late` : 'On time';
-  };
+  const formatDelay = (delay: number) => `${Math.floor(delay / 60)} min late`;
+
+  const getSearchPlaceholder = () =>
+    'Enter Eircode (e.g., D01F5P2) or Dublin address';
+
+  // --- Keep the same JSX below (unchanged from your previous HomeScreen) ---
+  // (Weather, Nearby buses, Quick Actions, Features Overview, etc.)
+  // ... use your previous code for rendering
 
   return (
     <ScrollView style={styles.container}>
@@ -138,13 +276,36 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Dublin Bus & Weather</Text>
         <Text style={styles.headerSubtitle}>Real-time travel information</Text>
+
+        {/* Location Status */}
+        <View style={styles.locationStatus}>
+          {locationLoading ? (
+            <Text style={styles.locationText}>📍 Getting your location...</Text>
+          ) : locationError ? (
+            <View style={styles.locationError}>
+              <Text style={styles.locationErrorText}>{locationError}</Text>
+              <TouchableOpacity onPress={handleRefreshLocation}>
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : locationName ? (
+            <View style={styles.locationSuccess}>
+              <Text style={styles.locationText}>📍 {locationName}</Text>
+              <TouchableOpacity onPress={handleRefreshLocation}>
+                <Text style={styles.retryText}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={styles.locationText}>📍 Unknown Location</Text>
+          )}
+        </View>
       </View>
 
       {/* Search Section */}
       <View style={styles.searchSection}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Enter Eircode or address..."
+          placeholder={getSearchPlaceholder()}
           value={eircode}
           onChangeText={setEircode}
           placeholderTextColor={COLORS.darkGray}
@@ -163,7 +324,9 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       {/* Current Weather */}
       {currentWeather && (
         <View style={styles.weatherCard}>
-          <Text style={styles.sectionTitle}>Current Weather</Text>
+          <Text style={styles.sectionTitle}>
+            Current Weather {locationName && `in ${locationName}`}
+          </Text>
           <View style={styles.weatherContent}>
             <Text style={styles.temperature}>
               {Math.round(currentWeather.main.temp)}°C
@@ -179,7 +342,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
                 Humidity: {currentWeather.main.humidity}%
               </Text>
               <Text style={styles.weatherInfo}>
-                Wind: {currentWeather.wind.speed} m/s
+                Wind: {currentWeather.wind.speed.toFixed(1)} m/s
               </Text>
             </View>
           </View>
@@ -188,39 +351,54 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
       {/* Nearby Buses */}
       <View style={styles.busesSection}>
-        <Text style={styles.sectionTitle}>Nearby Buses</Text>
-        {nearbyBuses.map(bus => {
-          const delay =
-            bus.trip_update?.stop_time_update[0]?.arrival.delay || 0;
-          const traffic = getTrafficLevel(delay);
-
-          return (
-            <View key={bus.id} style={styles.busCard}>
-              <View style={styles.busHeader}>
-                <Text style={styles.busNumber}>
-                  Bus {bus.trip_update?.trip.route_id}
-                </Text>
-                <Text style={styles.busDelay}>{formatDelay(delay)}</Text>
-              </View>
-              <Text style={styles.busInfo}>
-                Vehicle: {bus.trip_update?.vehicle.id}
-              </Text>
-              <View style={styles.busDetails}>
-                <View
-                  style={[
-                    styles.trafficIndicator,
-                    { backgroundColor: traffic.color },
-                  ]}
-                >
-                  <Text style={styles.trafficText}>{traffic.label}</Text>
+        <Text style={styles.sectionTitle}>
+          Nearby Buses ({nearbyBuses.length})
+        </Text>
+        {nearbyBuses.length > 0 ? (
+          nearbyBuses.slice(0, 4).map(bus => {
+            const traffic = getTrafficLevel(bus.delay);
+            return (
+              <View key={bus.id} style={styles.busCard}>
+                <View style={styles.busHeader}>
+                  <Text style={styles.busNumber}>Bus {bus.route}</Text>
+                  <Text style={styles.busDelay}>
+                    {formatDelay(bus.delay) > 1
+                      ? formatDelay(bus.delay)
+                      : 'On time'}
+                  </Text>
                 </View>
-                {delay > 300 && (
-                  <Text style={styles.delayWarning}>⚠️ Delayed</Text>
-                )}
+                <Text style={styles.busInfo}>To: {bus.destination}</Text>
+                <Text style={styles.busInfo}>
+                  ETA: {bus.eta} • {bus.stops} stops
+                </Text>
+                <View style={styles.busDetails}>
+                  <View
+                    style={[
+                      styles.trafficIndicator,
+                      { backgroundColor: traffic.color },
+                    ]}
+                  >
+                    <Text style={styles.trafficText}>{traffic.label}</Text>
+                  </View>
+                  {bus.delay > 300 && (
+                    <Text style={styles.delayWarning}>
+                      ⚠️ {Math.floor(bus.delay / 60)} min delay
+                    </Text>
+                  )}
+                </View>
               </View>
-            </View>
-          );
-        })}
+            );
+          })
+        ) : (
+          <View style={styles.noBusesCard}>
+            <Text style={styles.noBusesText}>No buses found nearby</Text>
+            <Text style={styles.noBusesSubtext}>
+              {userLocation
+                ? 'Try refreshing or check back later'
+                : 'Enable location services to see nearby buses'}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Quick Actions */}
@@ -241,26 +419,31 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         <Text style={styles.featuresTitle}>App Features</Text>
         <View style={styles.featuresGrid}>
           <View style={styles.featureItem}>
+            <Text style={styles.featureIcon}>📍</Text>
+            <Text style={styles.featureText}>Location Name</Text>
+          </View>
+          <View style={styles.featureItem}>
             <Text style={styles.featureIcon}>🚌</Text>
-            <Text style={styles.featureText}>Real-time Bus Tracking</Text>
+            <Text style={styles.featureText}>Live Bus Tracking</Text>
           </View>
           <View style={styles.featureItem}>
             <Text style={styles.featureIcon}>🌤️</Text>
-            <Text style={styles.featureText}>Live Weather Updates</Text>
+            <Text style={styles.featureText}>Weather Updates</Text>
           </View>
           <View style={styles.featureItem}>
             <Text style={styles.featureIcon}>🗺️</Text>
             <Text style={styles.featureText}>Interactive Maps</Text>
           </View>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>⏱️</Text>
-            <Text style={styles.featureText}>Journey Planning</Text>
-          </View>
+        </View>
+        <View style={styles.apiStatus}>
+          <Text style={styles.apiStatusText}>API Status: {apiStatus}</Text>
         </View>
       </View>
     </ScrollView>
   );
 };
+
+// ... (keep the existing styles from your previous code)
 
 const styles = StyleSheet.create({
   container: {
@@ -272,6 +455,18 @@ const styles = StyleSheet.create({
     padding: STYLES.spacing.lg,
     paddingTop: STYLES.spacing.xl + 20,
   },
+  apiStatus: {
+    backgroundColor: COLORS.lightGray,
+    padding: STYLES.spacing.sm,
+    borderRadius: STYLES.borderRadius.sm,
+    margin: STYLES.spacing.sm,
+    alignItems: 'center',
+  },
+  apiStatusText: {
+    fontSize: 12,
+    color: COLORS.darkGray,
+    fontStyle: 'italic',
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -282,6 +477,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.white,
     opacity: 0.9,
+    marginBottom: STYLES.spacing.sm,
+  },
+  locationStatus: {
+    marginTop: STYLES.spacing.sm,
+  },
+  locationText: {
+    fontSize: 14,
+    color: COLORS.white,
+    opacity: 0.9,
+  },
+  locationError: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  locationErrorText: {
+    fontSize: 14,
+    color: COLORS.warning,
+    flex: 1,
+  },
+  locationSuccess: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  retryText: {
+    fontSize: 14,
+    color: COLORS.white,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   searchSection: {
     padding: STYLES.spacing.lg,
@@ -368,6 +593,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 2,
+  },
+  noBusesCard: {
+    backgroundColor: COLORS.white,
+    padding: STYLES.spacing.lg,
+    borderRadius: STYLES.borderRadius.md,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  noBusesText: {
+    fontSize: 16,
+    color: COLORS.text,
+    fontWeight: '600',
+    marginBottom: STYLES.spacing.xs,
+  },
+  noBusesSubtext: {
+    fontSize: 14,
+    color: COLORS.darkGray,
+    textAlign: 'center',
   },
   busHeader: {
     flexDirection: 'row',
@@ -467,6 +714,18 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     textAlign: 'center',
     fontWeight: '500',
+  },
+  moreBusesCard: {
+    backgroundColor: COLORS.lightGray,
+    padding: STYLES.spacing.md,
+    borderRadius: STYLES.borderRadius.md,
+    alignItems: 'center',
+    marginTop: STYLES.spacing.sm,
+  },
+  moreBusesText: {
+    fontSize: 14,
+    color: COLORS.darkGray,
+    fontStyle: 'italic',
   },
 });
 

@@ -6,6 +6,16 @@
 <string>This app needs access to your location to show nearby buses and weather.</string>
 <key>NSLocationAlwaysUsageDescription</key>
 <string>This app needs access to your location to show nearby buses and weather.</string>
+<key>GoogleMapsApiKey</key>
+<string>YOUR_GOOGLE_MAPS_API_KEY</string>
+
+<key>MKDirectionsApplicationSupportedModes</key>
+<array>
+    <string>walking</string>
+    <string>automobile</string>
+    <string>transit</string>
+</array>
+
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

@@ -75,3 +75,25 @@ export interface JourneyPlan {
   buses: TransportData[];
   weather: WeatherData;
 }
+
+export interface LocationData {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+export interface EnhancedBusData {
+  id: string;
+  route: string;
+  routeId: string;
+  vehicleId: string;
+  latitude?: number;
+  longitude?: number;
+  delay: number;
+  traffic: 'light' | 'moderate' | 'heavy';
+  timestamp?: string;
+  destination: string;
+  stops: number;
+  eta: string;
+  duration: string;
+}
