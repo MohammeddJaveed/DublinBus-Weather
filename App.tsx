@@ -1,44 +1,81 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import { StyleSheet } from 'react-native';
+import HomeScreen from './src/screens/HomeScreen';
+import SearchResultsScreen from './src/screens/SearchResultsScreen';
+import LiveMapScreen from './src/screens/LiveMapScreen';
+import JourneyPlannerScreen from './src/screens/JourneyPlanner';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+const COLORS = {
+  primary: '#00A65A',
+  secondary: '#3498DB',
+  background: '#F8F9FA',
+  text: '#2C3E50',
+  success: '#27AE60',
+  warning: '#F39C12',
+  danger: '#E74C3C',
+  lightGray: '#ECF0F1',
+  darkGray: '#7F8C8D',
+  white: '#FFFFFF',
+};
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+export type RootStackParamList = {
+  Home: undefined;
+  SearchResults: {
+    eircode: string;
+    userLocation: { latitude: number; longitude: number };
+  };
+  LiveMap: {
+    busData: any[];
+    destination: { latitude: number; longitude: number };
+  };
+  JourneyPlanner: undefined;
+};
 
+const Stack = createStackNavigator<RootStackParamList>();
+
+const App: React.FC = () => {
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
+    <NavigationContainer>
+      <Stack.Navigator
+        screenOptions={{
+          headerStyle: styles.header,
+          headerTintColor: COLORS.white,
+          headerTitleStyle: styles.headerTitle,
+        }}
+      >
+        <Stack.Screen
+          name="Home"
+          component={HomeScreen}
+          options={{ title: 'Dublin Bus & Weather' }}
+        />
+        <Stack.Screen
+          name="SearchResults"
+          component={SearchResultsScreen}
+          options={{ title: 'Search Results' }}
+        />
+        <Stack.Screen
+          name="LiveMap"
+          component={LiveMapScreen}
+          options={{ title: 'Live Map' }}
+        />
+        <Stack.Screen
+          name="JourneyPlanner"
+          component={JourneyPlannerScreen}
+          options={{ title: 'Plan Journey' }}
+        />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
-}
-
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
-  );
-}
+};
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  header: {
+    backgroundColor: COLORS.primary,
+  },
+  headerTitle: {
+    fontWeight: 'bold',
   },
 });
 
