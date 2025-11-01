@@ -20,3 +20,4 @@ export interface BusRoute {
   route_color?: string;
   route_text_color?: string;
 }
+

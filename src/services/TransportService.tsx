@@ -12,7 +12,7 @@ export interface Bus {
   vehicleId?: string;
   latitude: number;
   longitude: number;
-  delay: number; // in seconds
+  delay: number;
   timestamp?: number;
   destination: string;
   bearing?: number;
@@ -24,8 +24,18 @@ export interface Bus {
 }
 
 class TransportService {
-  // Fetch raw NTI data
+  private lastFetchTime: number = 0;
+  private cachedData: any[] = [];
+
   async getRealTimeData(): Promise<any[]> {
+    const now = Date.now();
+
+    // ✅ Use cached data if last fetch was within 30 seconds
+    if (now - this.lastFetchTime < 300000 && this.cachedData.length > 0) {
+      console.log(' Using cached NTI transport data');
+      return this.cachedData;
+    }
+
     try {
       const response = await axios.get(TRANSPORT_BASE_URL, {
         headers: {
@@ -35,49 +45,117 @@ class TransportService {
         timeout: 15000,
       });
 
-      console.log(
-        'NTI API Raw Response:',
-        JSON.stringify(response.data, null, 2),
-      );
-
-      if (response.data.entity && Array.isArray(response.data.entity)) {
-        return response.data.entity;
+      if (response.data?.entity && Array.isArray(response.data.entity)) {
+        this.cachedData = response.data.entity;
+        this.lastFetchTime = now;
+        console.log(
+          `✅ NTI API: ${
+            this.cachedData.length
+          } entities fetched at ${new Date().toISOString()}`,
+        );
+        return this.cachedData;
       }
-      console.warn('⚠️ Unexpected API response structure.');
-      return [];
+
+      console.warn('⚠️ Unexpected NTI API response structure.');
+      return this.cachedData;
     } catch (error: any) {
-      console.error(' NTI API Error:', error.message);
+      const status = error.response?.status;
+      console.error(`❌ NTI API Error (${status}):`, error.message);
+
+      if (status === 429) {
+        console.warn('⚠️ Rate limit hit. Retrying after 10 seconds...');
+        await new Promise(res => setTimeout(res, 10000));
+        return this.getRealTimeData();
+      }
+
+      if (this.cachedData.length > 0) {
+        console.log('⚙️ Using cached data due to API error.');
+        return this.cachedData;
+      }
+
       return [];
     }
   }
 
+  async getBusesToDestination(
+    userLat: number,
+    userLon: number,
+    destLat: number,
+    destLon: number,
+  ): Promise<Bus[]> {
+    const nearbyBuses = await this.getBusesNearLocation(userLat, userLon, 10);
+
+    let stopsData: any[] = [];
+    try {
+      stopsData = (await import('../data/json/stops.json')).default;
+    } catch (e) {
+      console.warn('Stops data not found');
+      return [];
+    }
+
+    const nearbyStops = stopsData.filter(stop => {
+      const distance = this.calculateDistance(
+        destLat,
+        destLon,
+        parseFloat(stop.stop_lat),
+        parseFloat(stop.stop_lon),
+      );
+      return distance <= 1;
+    });
+
+    if (nearbyStops.length === 0) {
+      console.log('No stops near destination');
+      return [];
+    }
+
+    const nearbyStopIds = new Set(nearbyStops.map(s => s.stop_id));
+
+    const filtered = nearbyBuses.filter(bus => {
+      if (bus.stopId && nearbyStopIds.has(bus.stopId)) return true;
+
+      if (bus.routeId) {
+        const routeStops = stopsData.filter(s => s.route_id === bus.routeId);
+        return routeStops.some(stop => nearbyStopIds.has(stop.stop_id));
+      }
+
+      const distance = this.calculateDistance(
+        bus.latitude,
+        bus.longitude,
+        destLat,
+        destLon,
+      );
+      return distance <= 2;
+    });
+
+    console.log(`Found ${filtered.length} buses going toward destination`);
+    return filtered;
+  }
+
+  /**
+   * Get buses near user's location
+   */
   async getBusesNearLocation(
     lat: number,
     lon: number,
     radiusKm: number = 20,
   ): Promise<Bus[]> {
     const realTimeData = await this.getRealTimeData();
-
     const buses: Bus[] = [];
 
     realTimeData.forEach((entity, index) => {
       const tripUpdate = entity.trip_update;
       if (!tripUpdate) return;
 
-      const trip = tripUpdate.trip;
+      const trip = tripUpdate.trip || {};
       const vehicle = tripUpdate.vehicle || {};
       const stopTimes = tripUpdate.stop_time_update || [];
 
+      // Match static route info
       const routeInfo = routes.find(r => r.route_id === trip.route_id);
-      const routeShort = routeInfo?.route_short_name || routeInfo;
+      const routeShort = routeInfo?.route_short_name || 'Unknown';
       const routeLong = routeInfo?.route_long_name || 'Unknown';
 
-      let position = vehicle.position || {};
-      if (!position.latitude && stopTimes.length > 0) {
-        position.latitude = 0;
-        position.longitude = 0;
-      }
-
+      const position = vehicle.position || {};
       const delaySeconds = stopTimes[0]?.arrival?.delay ?? vehicle.delay ?? 0;
 
       buses.push({
@@ -89,7 +167,7 @@ class TransportService {
         longitude: position.longitude ?? lon,
         delay: delaySeconds,
         timestamp: vehicle.timestamp ?? tripUpdate.timestamp,
-        destination: routeLong, // ✅ use long name for destination
+        destination: routeLong,
         bearing: position.bearing ?? 0,
         speed: position.speed ?? 0,
         stopId: stopTimes[0]?.stop_id,
@@ -137,10 +215,7 @@ class TransportService {
   }
 
   getApiStatus(): { status: string; message: string } {
-    if (
-      !TRANSPORT_API_KEY ||
-      TRANSPORT_API_KEY === 'YOUR_ACTUAL_NTI_API_KEY_HERE'
-    ) {
+    if (!TRANSPORT_API_KEY || TRANSPORT_API_KEY === '') {
       return { status: 'no_key', message: 'API key not configured.' };
     }
     return { status: 'active', message: 'Connected to NTI API' };

@@ -1,3 +1,5 @@
+// src/screens/SearchResultsScreen.tsx
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -11,10 +13,7 @@ import {
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
-import { transportService } from '../services/TransportService';
 import { locationService } from '../services/LocationService';
-
-import routesData from '../data/json/routes.json';
 
 const COLORS = {
   primary: '#00A65A',
@@ -24,14 +23,13 @@ const COLORS = {
   success: '#27AE60',
   warning: '#F39C12',
   danger: '#E74C3C',
-  lightGray: '#ECF0F1',
   darkGray: '#7F8C8D',
   white: '#FFFFFF',
 };
 
 const STYLES = {
-  spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
-  borderRadius: { sm: 4, md: 8, lg: 12 },
+  spacing: { sm: 8, md: 16, lg: 24 },
+  borderRadius: { md: 8 },
 };
 
 type SearchResultsScreenNavigationProp = StackNavigationProp<
@@ -49,91 +47,45 @@ interface Props {
 }
 
 const SearchResultsScreen: React.FC<Props> = ({ navigation, route }) => {
+  const busesFromHome = route.params?.buses || [];
+  const destinationCoords = route.params?.destination;
   const [loading, setLoading] = useState(true);
   const [busData, setBusData] = useState<any[]>([]);
-  const [userLocation, setUserLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  }>({
+  const [userLocation, setUserLocation] = useState({
     latitude: 53.3498,
     longitude: -6.2603,
   });
 
-  const searchTerm = route.params?.searchTerm?.toLowerCase() || '';
-
   useEffect(() => {
-    loadNearbyBuses();
+    loadBuses();
   }, []);
 
-  const loadNearbyBuses = async () => {
+  const loadBuses = async () => {
     try {
       setLoading(true);
 
       let location;
       try {
         const permission = await locationService.requestLocationPermission();
-        if (permission) {
-          location = await locationService.getCurrentLocation();
-        } else {
-          location = locationService.getDefaultLocation();
-        }
+        location = permission
+          ? await locationService.getCurrentLocation()
+          : locationService.getDefaultLocation();
       } catch (err) {
-        console.warn('⚠️ Failed to get user location, using default', err);
+        console.warn(' Location error, using default Dublin coords');
         location = locationService.getDefaultLocation();
       }
-
       setUserLocation({
         latitude: location.latitude,
         longitude: location.longitude,
       });
 
-      const nearbyBuses = await transportService.getBusesNearLocation(
-        location.latitude,
-        location.longitude,
-        10, // 10 km radius
-      );
-
-      if (!nearbyBuses || nearbyBuses.length === 0) {
+      if (busesFromHome && busesFromHome.length > 0) {
+        setBusData(busesFromHome);
+      } else {
         setBusData([]);
-        setLoading(false);
-        return;
       }
-
-      const mappedBuses = nearbyBuses.map((bus, index) => {
-        const routeMatch = routesData.find(
-          (r: any) => r.route_id === bus.routeId,
-        );
-        const routeShort = routeMatch?.route_short_name || bus.route || 'N/A';
-        const routeLong = routeMatch?.route_long_name || 'Unknown Route';
-
-        return {
-          id: bus.id || `bus-${index}`,
-          routeShort,
-          routeLong,
-          start: 'Unknown',
-          destination: bus.destination || routeLong,
-          eta: bus.eta || '5 min',
-          delay: bus.delay || 0,
-          traffic:
-            bus.delay > 300 ? 'heavy' : bus.delay > 180 ? 'moderate' : 'light',
-          latitude: bus.latitude,
-          longitude: bus.longitude,
-          distanceFromUser: bus.distance || 0,
-        };
-      });
-
-      const filteredBuses = searchTerm
-        ? mappedBuses.filter(
-            bus =>
-              bus.routeShort.toLowerCase().includes(searchTerm) ||
-              bus.routeLong.toLowerCase().includes(searchTerm),
-          )
-        : mappedBuses.filter(bus => bus.distanceFromUser <= 10);
-
-      mappedBuses.sort((a, b) => a.distanceFromUser - b.distanceFromUser);
-      setBusData(mappedBuses);
     } catch (err) {
-      console.error('Error fetching nearby buses:', err);
+      console.error(' Error loading buses:', err);
       Alert.alert('Error', 'Failed to load bus data.');
       setBusData([]);
     } finally {
@@ -141,34 +93,28 @@ const SearchResultsScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   };
 
-  const getTrafficColor = (traffic: string) => {
-    switch (traffic) {
-      case 'light':
-        return COLORS.success;
-      case 'moderate':
-        return COLORS.warning;
-      case 'heavy':
-        return COLORS.danger;
-      default:
-        return COLORS.darkGray;
-    }
+  const getTrafficColor = (delay: number) => {
+    if (delay < 300) return COLORS.success;
+    if (delay < 900) return COLORS.warning;
+    return COLORS.danger;
   };
 
-  const handleRefresh = () => {
-    loadNearbyBuses();
-  };
+  const formatDelay = (delay: number) =>
+    delay > 0 ? `${Math.floor(delay / 60)} min late` : 'On time';
+
+  const handleRefresh = () => loadBuses();
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading buses near you...</Text>
+        <Text style={styles.loadingText}>Finding buses...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.container}>
       {busData.length > 0 ? (
         busData.map(bus => (
           <TouchableOpacity
@@ -177,30 +123,27 @@ const SearchResultsScreen: React.FC<Props> = ({ navigation, route }) => {
             onPress={() =>
               navigation.navigate('Map', {
                 selectedBus: bus,
-                userLocation: userLocation,
+                userLocation,
               })
             }
           >
             <Text style={styles.busRoute}>
-              🚌 {bus.routeShort} — {bus.routeLong}
+              🚌 {bus.route} — {bus.destination}
             </Text>
-            <Text style={styles.busDest}>To: {bus.destination}</Text>
-            <Text style={styles.busDetail}>ETA: {bus.eta}</Text>
+            <Text style={styles.busDest}>Destination: {bus.destination}</Text>
+            <Text style={styles.busDetail}>ETA: {bus.eta || 'N/A'}</Text>
             <Text
-              style={[
-                styles.busDetail,
-                { color: getTrafficColor(bus.traffic) },
-              ]}
+              style={[styles.busDetail, { color: getTrafficColor(bus.delay) }]}
             >
-              Traffic: {bus.traffic}
+              {formatDelay(bus.delay)}
             </Text>
           </TouchableOpacity>
         ))
       ) : (
         <View style={styles.noBusesCard}>
-          <Text style={styles.noBusesText}>No buses found nearby</Text>
+          <Text style={styles.noBusesText}>No buses found</Text>
           <Text style={styles.noBusesSubtext}>
-            Try refreshing or check again later
+            Try searching again or refreshing
           </Text>
           <TouchableOpacity
             style={styles.refreshButton}
@@ -225,11 +168,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: STYLES.spacing.sm,
-    fontSize: 16,
-    color: COLORS.text,
-  },
+  loadingText: { marginTop: 10, color: COLORS.text, fontSize: 16 },
   busCard: {
     backgroundColor: COLORS.white,
     borderRadius: STYLES.borderRadius.md,
@@ -253,20 +192,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 4,
   },
-  noBusesSubtext: {
-    fontSize: 14,
-    color: COLORS.darkGray,
-    marginBottom: STYLES.spacing.sm,
-  },
+  noBusesSubtext: { fontSize: 14, color: COLORS.darkGray, marginBottom: 8 },
   refreshButton: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: STYLES.spacing.lg,
     paddingVertical: STYLES.spacing.sm,
     borderRadius: STYLES.borderRadius.md,
   },
-  refreshButtonText: { color: COLORS.white, fontWeight: 'bold', fontSize: 14 },
+  refreshButtonText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
 });
 
 export default SearchResultsScreen;

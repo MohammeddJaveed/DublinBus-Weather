@@ -209,7 +209,8 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       }
 
       const userCoords = userLocation || locationService.getDefaultLocation();
-      const distance = eircodeService.calculateDistance(
+
+      const filteredBuses = await transportService.getBusesToDestination(
         userCoords.latitude,
         userCoords.longitude,
         destinationCoords.latitude,
@@ -221,7 +222,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         userLocation: userCoords,
         destination: destinationCoords,
         destinationName,
-        distance,
+        buses: filteredBuses,
       });
     } catch (error: any) {
       Alert.alert('Search Error', error.message || 'Failed to search.');
@@ -266,10 +267,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const getSearchPlaceholder = () =>
     'Enter Eircode (e.g., D01F5P2) or Dublin address';
 
-  // --- Keep the same JSX below (unchanged from your previous HomeScreen) ---
-  // (Weather, Nearby buses, Quick Actions, Features Overview, etc.)
-  // ... use your previous code for rendering
-
   return (
     <ScrollView style={styles.container}>
       {/* Header */}
@@ -301,7 +298,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </View>
 
-      {/* Search Section */}
       <View style={styles.searchSection}>
         <TextInput
           style={styles.searchInput}
@@ -321,7 +317,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {/* Current Weather */}
       {currentWeather && (
         <View style={styles.weatherCard}>
           <Text style={styles.sectionTitle}>
@@ -349,7 +344,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       )}
 
-      {/* Nearby Buses */}
       <View style={styles.busesSection}>
         <Text style={styles.sectionTitle}>
           Nearby Buses ({nearbyBuses.length})
@@ -442,8 +436,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     </ScrollView>
   );
 };
-
-// ... (keep the existing styles from your previous code)
 
 const styles = StyleSheet.create({
   container: {
