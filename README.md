@@ -53,5 +53,3 @@ Users can view nearby bus stops, track live bus locations, and check current wea
 
 - Node.js ≥ 20
 - Android Studio or Xcode (for simulator)
-
-3.
