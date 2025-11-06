@@ -1,97 +1,57 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# 🚌 DublinBusWeatherCombo
 
-# Getting Started
+A **React Native** application that combines **Dublin Bus real-time tracking (GTFS-Realtime API)** with **live weather updates** from OpenWeather.  
+Users can view nearby bus stops, track live bus locations, and check current weather conditions at their destination.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+---
 
-## Step 1: Start Metro
+## 🚀 Features
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- **Real-Time Bus Tracking:**  
+  Uses the General Transit Feed Specification (GTFS-Realtime) API to show live bus movement and timing.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+- **Interactive Map:**  
+  Displays all bus stops on a map using `react-native-maps`.  
+  Users can select a stop to view route details and destination information.
 
-```sh
-# Using npm
-npm start
+- **Weather Integration:**  
+  Integrates OpenWeather API to provide real-time weather conditions for any location.
 
-# OR using Yarn
-yarn start
-```
+- **Search Functionality:**  
+  Enter an **Eircode** or **place name** to view the buses reaching that destination.
 
-## Step 2: Build and run your app
+- **Static + Realtime Data Sync:**  
+  Static GTFS data (routes, stops, destinations) are mapped with realtime route IDs for accurate information.
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+---
 
-### Android
+## 🛠️ Tech Stack
 
-```sh
-# Using npm
-npm run android
+- **React Native** (v0.82.1)
+- **React Navigation** (v7)
+- **React Native Maps**
+- **Axios** for API requests
+- **Moment.js** for time formatting
+- **OpenWeather API**
+- **GTFS-Realtime API** for transit data
+- **TypeScript** support
+- **CSV-Parser & PapaParse** for static GTFS file parsing
 
-# OR using Yarn
-yarn android
-```
+---
 
-### iOS
+## 📱 Screens
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+- **Map Screen:** Displays bus stops and bus positions in real time.
+- **Search Screen:** Enter destination (Eircode or name) to find buses.
+- **Weather Overlay:** Shows live weather data for selected locations.
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+---
 
-```sh
-bundle install
-```
+## ⚙️ Setup & Installation
 
-Then, and every time you update your native dependencies, run:
+### Prerequisites
 
-```sh
-bundle exec pod install
-```
+- Node.js ≥ 20
+- Android Studio or Xcode (for simulator)
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+3.

@@ -57,8 +57,13 @@ const SearchResultsScreen: React.FC<Props> = ({ navigation, route }) => {
   });
 
   useEffect(() => {
-    loadBuses();
-  }, []);
+    if (route.params?.buses) {
+      setBusData(route.params.buses);
+    } else {
+      setBusData([]);
+    }
+    setLoading(false);
+  }, [route.params]);
 
   const loadBuses = async () => {
     try {
